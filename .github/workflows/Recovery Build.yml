@@ -255,6 +255,70 @@ jobs:
 
 
     # ---------------------------------------------------------
+    # Fix legacy Python 2 build script
+    # ---------------------------------------------------------
+
+    - name: Fix check_radio_versions.py
+      run: |
+
+        set -e
+
+        SCRIPT="build/make/tools/check_radio_versions.py"
+
+        echo "Checking:"
+        echo "$SCRIPT"
+
+        if [ ! -f "$SCRIPT" ]; then
+          echo "ERROR: check_radio_versions.py was not found."
+          exit 1
+        fi
+
+        echo "Original Python print statements:"
+        grep -n "^[[:space:]]*print " "$SCRIPT" || true
+
+        python3 - "$SCRIPT" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+lines = []
+
+for line in text.splitlines(True):
+    stripped = line.lstrip()
+
+    if stripped.startswith("print ") and not stripped.startswith("print ("):
+        indent = line[:len(line) - len(stripped)]
+        content = stripped[6:].rstrip("\r\n")
+        newline = "\n" if line.endswith("\n") else ""
+
+        lines.append(f"{indent}print({content}){newline}")
+    else:
+        lines.append(line)
+
+path.write_text("".join(lines))
+PY
+
+        echo ""
+        echo "Python compatibility fix applied."
+
+        echo ""
+        echo "Checking fixed print statements:"
+        grep -n "^[[:space:]]*print" "$SCRIPT" || true
+
+        echo ""
+        echo "Testing Python syntax..."
+
+        python3 -m py_compile "$SCRIPT"
+
+        echo ""
+        echo "check_radio_versions.py syntax check PASSED."
+
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+
+    # ---------------------------------------------------------
     # Clone T482L device tree
     # ---------------------------------------------------------
 
@@ -294,14 +358,7 @@ jobs:
 
 
     # ---------------------------------------------------------
-    # IMPORTANT:
-    # T482L uses vendor/omni/config/common.mk
-    #
-    # The device tree contains:
-    #
-    # $(call inherit-product, vendor/omni/config/common.mk)
-    #
-    # Therefore vendor/omni MUST exist.
+    # Check Omni vendor tree
     # ---------------------------------------------------------
 
     - name: Check Omni vendor tree
