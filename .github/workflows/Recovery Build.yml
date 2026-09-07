@@ -163,7 +163,8 @@ jobs:
           python3 \
           python-is-python3 \
           rsync \
-          ccache
+          ccache \
+          libtinfo5
 
 
     # ---------------------------------------------------------
