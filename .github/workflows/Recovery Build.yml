@@ -17,7 +17,7 @@ on:
       DEVICE_TREE_URL:
         description: 'T482L device tree URL'
         required: true
-        default: 'https://github.com/twrpdtgen/android_device_acer_T482L'
+        default: 'https://github.com/codebht/twrp_acerone8t482l_a10'
 
       DEVICE_TREE_BRANCH:
         description: 'T482L device tree branch'
