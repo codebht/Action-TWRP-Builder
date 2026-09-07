@@ -3,7 +3,6 @@ name: Recovery Build
 on:
   workflow_dispatch:
     inputs:
-
       MANIFEST_URL:
         description: 'TWRP Omni manifest URL'
         required: true
@@ -54,11 +53,8 @@ on:
         required: true
         default: 'recovery'
 
-
 jobs:
-
   build:
-
     if: github.event.repository.owner.id == github.event.sender.id
 
     runs-on: ubuntu-22.04
@@ -68,485 +64,331 @@ jobs:
 
     steps:
 
-    # =========================================================
-    # DISPLAY PARAMETERS
-    # =========================================================
-
-    - name: Display Run Parameters
-      run: |
-        echo "::group::Build Parameters"
-
-        echo "Manifest URL:"
-        echo "${{ github.event.inputs.MANIFEST_URL }}"
-
-        echo "Manifest Branch:"
-        echo "${{ github.event.inputs.MANIFEST_BRANCH }}"
-
-        echo "Device Tree URL:"
-        echo "${{ github.event.inputs.DEVICE_TREE_URL }}"
-
-        echo "Device Tree Branch:"
-        echo "${{ github.event.inputs.DEVICE_TREE_BRANCH }}"
-
-        echo "Device Path:"
-        echo "${{ github.event.inputs.DEVICE_PATH }}"
-
-        echo "Device Name:"
-        echo "${{ github.event.inputs.DEVICE_NAME }}"
-
-        echo "Makefile:"
-        echo "${{ github.event.inputs.MAKEFILE_NAME }}"
-
-        echo "Build Target:"
-        echo "${{ github.event.inputs.BUILD_TARGET }}image"
-
-        echo "::endgroup::"
-
-
-    # =========================================================
-    # CHECKOUT
-    # =========================================================
-
-    - name: Check Out
-      uses: actions/checkout@v4
-
-
-    # =========================================================
-    # CLEANUP RUNNER
-    # =========================================================
+      - name: Display Run Parameters
+        run: |
+          echo "========================================"
+          echo "Build Parameters"
+          echo "========================================"
+          echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
+          echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
+          echo "Device Tree URL: ${{ github.event.inputs.DEVICE_TREE_URL }}"
+          echo "Device Tree Branch: ${{ github.event.inputs.DEVICE_TREE_BRANCH }}"
+          echo "Device Path: ${{ github.event.inputs.DEVICE_PATH }}"
+          echo "Device Name: ${{ github.event.inputs.DEVICE_NAME }}"
+          echo "Makefile: ${{ github.event.inputs.MAKEFILE_NAME }}"
+          echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}"
+          echo "========================================"
+
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Prepare the environment
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            git \
+            curl \
+            wget \
+            unzip \
+            zip \
+            bc \
+            bison \
+            flex \
+            gperf \
+            build-essential \
+            gcc-multilib \
+            g++-multilib \
+            libc6-dev \
+            lib32ncurses5-dev \
+            lib32z1-dev \
+            libncurses5-dev \
+            libncurses-dev \
+            libxml2-utils \
+            xsltproc \
+            zlib1g-dev \
+            liblz4-tool \
+            lz4 \
+            liblzma-dev \
+            lzop \
+            pngcrush \
+            schedtool \
+            squashfs-tools \
+            imagemagick \
+            libbz2-dev \
+            ncftp \
+            qemu-user-static \
+            python3 \
+            python-is-python3 \
+            rsync \
+            ccache \
+            libtinfo5
+
+      - name: Install OpenJDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '8'
+
+      - name: Setup SSH Keys
+        if: |
+          startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') ||
+          startsWith(github.event.inputs.DEVICE_TREE_URL, 'git@github.com') ||
+          startsWith(github.event.inputs.COMMON_TREE_URL, 'git@github.com')
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install repo
+        run: |
+          mkdir -p "${HOME}/bin"
+
+          curl -L \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "${HOME}/bin/repo"
+
+          chmod +x "${HOME}/bin/repo"
+
+          sudo ln -sf "${HOME}/bin/repo" /usr/bin/repo
+
+          repo --version
+
+      - name: Initialize repo
+        id: pwd
+        run: |
+          mkdir -p workspace
+
+          cd workspace
+
+          echo "workspace-folder=$(pwd)" >> "$GITHUB_OUTPUT"
 
-    - name: Cleanup
-      uses: rokibhasansagar/slimhub_actions@main
+          git config --global user.name "code_bht"
+          git config --global user.email "codebht@gmail.com"
 
+          repo init \
+            --depth=1 \
+            -u "${{ github.event.inputs.MANIFEST_URL }}" \
+            -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
 
-    # =========================================================
-    # BUILD DEPENDENCIES
-    # =========================================================
+      - name: Repo Sync
+        run: |
+          repo sync \
+            -j"$(nproc --all)" \
+            --force-sync \
+            --no-clone-bundle \
+            --no-tags
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-    - name: Prepare the environment
-      run: |
-        sudo apt-get update
+      # =====================================================
+      # FIX PYTHON 2 SCRIPT
+      # =====================================================
 
-        sudo apt-get install -y \
-          git \
-          curl \
-          wget \
-          unzip \
-          zip \
-          bc \
-          bison \
-          flex \
-          gperf \
-          build-essential \
-          gcc-multilib \
-          g++-multilib \
-          libc6-dev \
-          lib32ncurses5-dev \
-          lib32z1-dev \
-          libncurses5-dev \
-          libncurses-dev \
-          libxml2-utils \
-          xsltproc \
-          zlib1g-dev \
-          liblz4-tool \
-          lz4 \
-          liblzma-dev \
-          lzop \
-          pngcrush \
-          schedtool \
-          squashfs-tools \
-          imagemagick \
-          libbz2-dev \
-          ncftp \
-          qemu-user-static \
-          python3 \
-          python-is-python3 \
-          rsync \
-          ccache \
-          libtinfo5
+      - name: Fix check_radio_versions.py
+        run: |
+          set -e
 
+          SCRIPT="build/make/tools/check_radio_versions.py"
 
-    # =========================================================
-    # JAVA 8
-    # =========================================================
+          echo "Checking $SCRIPT"
 
-    - name: Install OpenJDK 8
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'zulu'
-        java-version: '8'
+          if [ ! -f "$SCRIPT" ]; then
+            echo "ERROR: $SCRIPT not found!"
+            exit 1
+          fi
 
+          echo "Legacy Python script found."
 
-    # =========================================================
-    # SSH KEYS
-    # =========================================================
+          sed -i 's/^[[:space:]]*print \(.*\)$/print(\1)/' "$SCRIPT"
 
-    - name: Setup SSH Keys
-      if: |
-        startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') ||
-        startsWith(github.event.inputs.DEVICE_TREE_URL, 'git@github.com') ||
-        startsWith(github.event.inputs.COMMON_TREE_URL, 'git@github.com')
+          echo "Testing script..."
 
-      uses: webfactory/ssh-agent@v0.9.0
+          python3 -m py_compile "$SCRIPT"
 
-      with:
-        ssh-private-key: |
-          ${{ secrets.SSH_PRIVATE_KEY }}
+          echo "check_radio_versions.py fixed successfully."
 
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-    # =========================================================
-    # INSTALL REPO
-    # =========================================================
+      - name: Clone device tree
+        run: |
+          mkdir -p "$(dirname "${{ github.event.inputs.DEVICE_PATH }}")"
 
-    - name: Install repo
-      run: |
-        mkdir -p "${HOME}/bin"
+          git clone \
+            --depth=1 \
+            -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" \
+            "${{ github.event.inputs.DEVICE_TREE_URL }}" \
+            "${{ github.event.inputs.DEVICE_PATH }}"
 
-        curl -L \
-          https://storage.googleapis.com/git-repo-downloads/repo \
-          -o "${HOME}/bin/repo"
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-        chmod +x "${HOME}/bin/repo"
+      - name: Clone common tree
+        if: |
+          github.event.inputs.COMMON_TREE_URL != '' &&
+          github.event.inputs.COMMON_PATH != ''
+        run: |
+          mkdir -p "$(dirname "${{ github.event.inputs.COMMON_PATH }}")"
 
-        sudo ln -sf "${HOME}/bin/repo" /usr/bin/repo
+          git clone \
+            --depth=1 \
+            "${{ github.event.inputs.COMMON_TREE_URL }}" \
+            "${{ github.event.inputs.COMMON_PATH }}"
 
-        repo --version
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
+      - name: Check Omni vendor tree
+        run: |
+          echo "Checking vendor/omni..."
 
-    # =========================================================
-    # INITIALIZE SOURCE TREE
-    # =========================================================
+          if [ ! -f "vendor/omni/config/common.mk" ]; then
+            echo "vendor/omni/config/common.mk is missing."
 
-    - name: Initialize repo
-      id: pwd
-      run: |
-        mkdir -p workspace
+            echo "Checking manifest projects..."
 
-        cd workspace
+            repo manifest -r | grep -i "vendor/omni" || true
 
-        echo "workspace-folder=$(pwd)" >> "$GITHUB_OUTPUT"
+            echo ""
+            echo "ERROR: Omni vendor tree is not present."
+            exit 1
+          fi
 
-        git config --global user.name "code_bht"
-        git config --global user.email "codebht@gmail.com"
+          echo "Omni vendor tree found."
 
-        repo init \
-          --depth=1 \
-          -u "${{ github.event.inputs.MANIFEST_URL }}" \
-          -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
+          ls -la vendor/omni/config
 
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-    # =========================================================
-    # REPO SYNC
-    # =========================================================
+      - name: Check Device Tree
+        run: |
+          echo "Checking device tree..."
 
-    - name: Repo Sync
-      run: |
-        repo sync \
-          -j"$(nproc --all)" \
-          --force-sync \
-          --no-clone-bundle \
-          --no-tags
-
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-
-    # =========================================================
-    # FIX LEGACY PYTHON 2 SCRIPT
-    # =========================================================
-
-    - name: Fix check_radio_versions.py
-      run: |
-        set -e
-
-        SCRIPT="build/make/tools/check_radio_versions.py"
-
-        echo "========================================"
-        echo "Checking legacy Python script"
-        echo "========================================"
-
-        if [ ! -f "$SCRIPT" ]; then
-          echo "ERROR: $SCRIPT not found!"
-          exit 1
-        fi
-
-        echo "Found:"
-        echo "$SCRIPT"
-
-        echo ""
-        echo "Applying Python 2 print() compatibility fix..."
-
-        python3 - "$SCRIPT" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-text = path.read_text()
-
-output = []
-
-for line in text.splitlines(True):
-    stripped = line.lstrip()
-
-    if stripped.startswith("print ") and not stripped.startswith("print("):
-        indent = line[:len(line) - len(stripped)]
-        content = stripped[6:].rstrip("\r\n")
-
-        newline = "\n" if line.endswith("\n") else ""
-
-        output.append(
-            indent + "print(" + content + ")" + newline
-        )
-    else:
-        output.append(line)
-
-path.write_text("".join(output))
-PY
-
-        echo ""
-        echo "Testing Python syntax..."
-
-        python3 -m py_compile "$SCRIPT"
-
-        echo ""
-        echo "Python syntax check PASSED."
-
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-
-    # =========================================================
-    # CLONE DEVICE TREE
-    # =========================================================
-
-    - name: Clone device tree
-      run: |
-        mkdir -p "$(dirname "${{ github.event.inputs.DEVICE_PATH }}")"
-
-        git clone \
-          --depth=1 \
-          -b "${{ github.event.inputs.DEVICE_TREE_BRANCH }}" \
-          "${{ github.event.inputs.DEVICE_TREE_URL }}" \
-          "${{ github.event.inputs.DEVICE_PATH }}"
-
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-
-    # =========================================================
-    # CLONE COMMON TREE
-    # =========================================================
-
-    - name: Clone common tree
-      if: |
-        github.event.inputs.COMMON_TREE_URL != '' &&
-        github.event.inputs.COMMON_PATH != ''
-
-      run: |
-        mkdir -p "$(dirname "${{ github.event.inputs.COMMON_PATH }}")"
-
-        git clone \
-          --depth=1 \
-          "${{ github.event.inputs.COMMON_TREE_URL }}" \
-          "${{ github.event.inputs.COMMON_PATH }}"
-
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-
-    # =========================================================
-    # CHECK OMNI VENDOR TREE
-    # =========================================================
-
-    - name: Check Omni vendor tree
-      run: |
-        echo "Checking vendor/omni..."
-
-        if [ ! -f "vendor/omni/config/common.mk" ]; then
-
-          echo "vendor/omni/config/common.mk is missing."
-
-          echo "Checking manifest projects..."
-
-          repo manifest -r | grep -i "vendor/omni" || true
+          test -f "${{ github.event.inputs.DEVICE_PATH }}/AndroidProducts.mk"
+          test -f "${{ github.event.inputs.DEVICE_PATH }}/omni_T482L.mk"
+          test -f "${{ github.event.inputs.DEVICE_PATH }}/BoardConfig.mk"
 
           echo ""
-          echo "ERROR: Omni vendor tree is not present."
-          echo "The T482L device tree requires vendor/omni/config/common.mk."
+          echo "AndroidProducts.mk:"
+          cat "${{ github.event.inputs.DEVICE_PATH }}/AndroidProducts.mk"
+
           echo ""
+          echo "Product makefile:"
+          cat "${{ github.event.inputs.DEVICE_PATH }}/omni_T482L.mk"
 
-          exit 1
-        fi
+          echo ""
+          echo "BoardConfig.mk:"
+          cat "${{ github.event.inputs.DEVICE_PATH }}/BoardConfig.mk"
 
-        echo "Omni vendor tree found."
+          echo ""
+          echo "Device tree check passed."
 
-        ls -la vendor/omni/config
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+      - name: Check Lunch Target
+        run: |
+          echo "Searching for omni_T482L..."
 
+          grep -R \
+            "omni_T482L" \
+            "${{ github.event.inputs.DEVICE_PATH }}" \
+            || true
 
-    # =========================================================
-    # CHECK DEVICE TREE
-    # =========================================================
+          echo ""
+          echo "Expected lunch target:"
+          echo "omni_T482L-eng"
 
-    - name: Check Device Tree
-      run: |
-        echo "Checking device tree..."
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-        test -f "${{ github.event.inputs.DEVICE_PATH }}/AndroidProducts.mk"
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 12
 
-        test -f "${{ github.event.inputs.DEVICE_PATH }}/omni_T482L.mk"
+      - name: Building recovery
+        run: |
+          set -e
 
-        test -f "${{ github.event.inputs.DEVICE_PATH }}/BoardConfig.mk"
+          echo "========================================"
+          echo "Preparing TWRP build"
+          echo "========================================"
 
-        echo ""
-        echo "AndroidProducts.mk:"
-        cat "${{ github.event.inputs.DEVICE_PATH }}/AndroidProducts.mk"
+          source build/envsetup.sh
 
-        echo ""
-        echo "Product makefile:"
-        cat "${{ github.event.inputs.DEVICE_PATH }}/omni_T482L.mk"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export USE_CCACHE=1
 
-        echo ""
-        echo "BoardConfig.mk:"
-        cat "${{ github.event.inputs.DEVICE_PATH }}/BoardConfig.mk"
+          ccache -M 10G || true
 
-        echo ""
-        echo "Device tree check passed."
+          echo ""
+          echo "========================================"
+          echo "Lunch: omni_T482L-eng"
+          echo "========================================"
 
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+          lunch omni_T482L-eng
 
+          echo ""
+          echo "========================================"
+          echo "Cleaning old output"
+          echo "========================================"
 
-    # =========================================================
-    # CHECK LUNCH TARGET
-    # =========================================================
+          make clean
 
-    - name: Check Lunch Target
-      run: |
-        echo "Searching for omni_T482L..."
+          echo ""
+          echo "========================================"
+          echo "Building recovery.img"
+          echo "========================================"
 
-        grep -R \
-          "omni_T482L" \
-          "${{ github.event.inputs.DEVICE_PATH }}" \
-          || true
+          mka recoveryimage -j"$(nproc --all)"
 
-        echo ""
-        echo "Expected lunch target:"
-        echo "omni_T482L-eng"
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+      - name: Show Build Output
+        if: always()
+        run: |
+          echo "========================================"
+          echo "Output directory"
+          echo "========================================"
 
+          ls -lah \
+            "out/target/product/${{ github.event.inputs.DEVICE_NAME }}/" \
+            || true
 
-    # =========================================================
-    # SWAP
-    # =========================================================
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-    - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 12
+      - name: Setup tmate session
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
 
+      - name: Upload Recovery
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img
+            workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
 
-    # =========================================================
-    # BUILD RECOVERY
-    # =========================================================
+          name: T482L-${{ github.run_id }}
 
-    - name: Building recovery
-      run: |
-        set -e
+          tag_name: T482L-${{ github.run_id }}
 
-        echo "========================================"
-        echo "Preparing TWRP build"
-        echo "========================================"
+          body: |
+            TWRP Recovery Build
 
-        source build/envsetup.sh
+            Device: Acer One 8 T4-82L
+            Codename: T482L
 
-        export ALLOW_MISSING_DEPENDENCIES=true
-        export USE_CCACHE=1
+            Manifest:
+            ${{ github.event.inputs.MANIFEST_BRANCH }}
 
-        ccache -M 10G || true
+            Device Tree:
+            ${{ github.event.inputs.DEVICE_TREE_BRANCH }}
 
-        echo ""
-        echo "========================================"
-        echo "Lunch: omni_T482L-eng"
-        echo "========================================"
+            Build Target:
+            recoveryimage
 
-        lunch omni_T482L-eng
+            Build ID:
+            ${{ github.run_id }}
 
-        echo ""
-        echo "========================================"
-        echo "Cleaning old output"
-        echo "========================================"
-
-        make clean
-
-        echo ""
-        echo "========================================"
-        echo "Building recovery.img"
-        echo "========================================"
-
-        mka recoveryimage -j"$(nproc --all)"
-
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-
-    # =========================================================
-    # SHOW BUILD OUTPUT
-    # =========================================================
-
-    - name: Show Build Output
-      if: always()
-      run: |
-        echo "========================================"
-        echo "Output directory"
-        echo "========================================"
-
-        ls -lah \
-          "out/target/product/${{ github.event.inputs.DEVICE_NAME }}/" \
-          || true
-
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-
-    # =========================================================
-    # TMATE DEBUG SESSION
-    # =========================================================
-
-    - name: Setup tmate session
-      if: failure()
-      uses: mxschmitt/action-tmate@v3
-
-
-    # =========================================================
-    # UPLOAD RECOVERY
-    # =========================================================
-
-    - name: Upload Recovery
-      if: success()
-      uses: softprops/action-gh-release@v2
-
-      with:
-        files: |
-          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img
-          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
-
-        name: T482L-${{ github.run_id }}
-
-        tag_name: T482L-${{ github.run_id }}
-
-        body: |
-          TWRP Recovery Build
-
-          Device: Acer One 8 T4-82L
-          Codename: T482L
-
-          Manifest:
-          ${{ github.event.inputs.MANIFEST_BRANCH }}
-
-          Device Tree:
-          ${{ github.event.inputs.DEVICE_TREE_BRANCH }}
-
-          Build Target:
-          recoveryimage
-
-          Build ID:
-          ${{ github.run_id }}
-
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
