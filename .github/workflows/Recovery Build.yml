@@ -68,9 +68,9 @@ jobs:
 
     steps:
 
-    # ---------------------------------------------------------
-    # Display parameters
-    # ---------------------------------------------------------
+    # =========================================================
+    # DISPLAY PARAMETERS
+    # =========================================================
 
     - name: Display Run Parameters
       run: |
@@ -103,29 +103,28 @@ jobs:
         echo "::endgroup::"
 
 
-    # ---------------------------------------------------------
-    # Checkout workflow repository
-    # ---------------------------------------------------------
+    # =========================================================
+    # CHECKOUT
+    # =========================================================
 
     - name: Check Out
       uses: actions/checkout@v4
 
 
-    # ---------------------------------------------------------
-    # Cleanup GitHub runner
-    # ---------------------------------------------------------
+    # =========================================================
+    # CLEANUP RUNNER
+    # =========================================================
 
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
 
-    # ---------------------------------------------------------
-    # Install build dependencies
-    # ---------------------------------------------------------
+    # =========================================================
+    # BUILD DEPENDENCIES
+    # =========================================================
 
     - name: Prepare the environment
       run: |
-
         sudo apt-get update
 
         sudo apt-get install -y \
@@ -167,9 +166,9 @@ jobs:
           libtinfo5
 
 
-    # ---------------------------------------------------------
-    # Java
-    # ---------------------------------------------------------
+    # =========================================================
+    # JAVA 8
+    # =========================================================
 
     - name: Install OpenJDK 8
       uses: actions/setup-java@v4
@@ -178,9 +177,9 @@ jobs:
         java-version: '8'
 
 
-    # ---------------------------------------------------------
-    # SSH
-    # ---------------------------------------------------------
+    # =========================================================
+    # SSH KEYS
+    # =========================================================
 
     - name: Setup SSH Keys
       if: |
@@ -195,13 +194,12 @@ jobs:
           ${{ secrets.SSH_PRIVATE_KEY }}
 
 
-    # ---------------------------------------------------------
-    # Install repo
-    # ---------------------------------------------------------
+    # =========================================================
+    # INSTALL REPO
+    # =========================================================
 
     - name: Install repo
       run: |
-
         mkdir -p "${HOME}/bin"
 
         curl -L \
@@ -215,14 +213,13 @@ jobs:
         repo --version
 
 
-    # ---------------------------------------------------------
-    # Initialize source tree
-    # ---------------------------------------------------------
+    # =========================================================
+    # INITIALIZE SOURCE TREE
+    # =========================================================
 
     - name: Initialize repo
       id: pwd
       run: |
-
         mkdir -p workspace
 
         cd workspace
@@ -238,13 +235,12 @@ jobs:
           -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
 
 
-    # ---------------------------------------------------------
-    # Sync source
-    # ---------------------------------------------------------
+    # =========================================================
+    # REPO SYNC
+    # =========================================================
 
     - name: Repo Sync
       run: |
-
         repo sync \
           -j"$(nproc --all)" \
           --force-sync \
@@ -254,27 +250,30 @@ jobs:
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Fix legacy Python 2 build script
-    # ---------------------------------------------------------
+    # =========================================================
+    # FIX LEGACY PYTHON 2 SCRIPT
+    # =========================================================
 
     - name: Fix check_radio_versions.py
       run: |
-
         set -e
 
         SCRIPT="build/make/tools/check_radio_versions.py"
 
-        echo "Checking:"
-        echo "$SCRIPT"
+        echo "========================================"
+        echo "Checking legacy Python script"
+        echo "========================================"
 
         if [ ! -f "$SCRIPT" ]; then
-          echo "ERROR: check_radio_versions.py was not found."
+          echo "ERROR: $SCRIPT not found!"
           exit 1
         fi
 
-        echo "Original Python print statements:"
-        grep -n "^[[:space:]]*print " "$SCRIPT" || true
+        echo "Found:"
+        echo "$SCRIPT"
+
+        echo ""
+        echo "Applying Python 2 print() compatibility fix..."
 
         python3 - "$SCRIPT" <<'PY'
 import sys
@@ -283,29 +282,25 @@ from pathlib import Path
 path = Path(sys.argv[1])
 text = path.read_text()
 
-lines = []
+output = []
 
 for line in text.splitlines(True):
     stripped = line.lstrip()
 
-    if stripped.startswith("print ") and not stripped.startswith("print ("):
+    if stripped.startswith("print ") and not stripped.startswith("print("):
         indent = line[:len(line) - len(stripped)]
         content = stripped[6:].rstrip("\r\n")
+
         newline = "\n" if line.endswith("\n") else ""
 
-        lines.append(f"{indent}print({content}){newline}")
+        output.append(
+            indent + "print(" + content + ")" + newline
+        )
     else:
-        lines.append(line)
+        output.append(line)
 
-path.write_text("".join(lines))
+path.write_text("".join(output))
 PY
-
-        echo ""
-        echo "Python compatibility fix applied."
-
-        echo ""
-        echo "Checking fixed print statements:"
-        grep -n "^[[:space:]]*print" "$SCRIPT" || true
 
         echo ""
         echo "Testing Python syntax..."
@@ -313,18 +308,17 @@ PY
         python3 -m py_compile "$SCRIPT"
 
         echo ""
-        echo "check_radio_versions.py syntax check PASSED."
+        echo "Python syntax check PASSED."
 
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Clone T482L device tree
-    # ---------------------------------------------------------
+    # =========================================================
+    # CLONE DEVICE TREE
+    # =========================================================
 
     - name: Clone device tree
       run: |
-
         mkdir -p "$(dirname "${{ github.event.inputs.DEVICE_PATH }}")"
 
         git clone \
@@ -336,9 +330,9 @@ PY
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Clone common tree if supplied
-    # ---------------------------------------------------------
+    # =========================================================
+    # CLONE COMMON TREE
+    # =========================================================
 
     - name: Clone common tree
       if: |
@@ -346,7 +340,6 @@ PY
         github.event.inputs.COMMON_PATH != ''
 
       run: |
-
         mkdir -p "$(dirname "${{ github.event.inputs.COMMON_PATH }}")"
 
         git clone \
@@ -357,13 +350,12 @@ PY
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Check Omni vendor tree
-    # ---------------------------------------------------------
+    # =========================================================
+    # CHECK OMNI VENDOR TREE
+    # =========================================================
 
     - name: Check Omni vendor tree
       run: |
-
         echo "Checking vendor/omni..."
 
         if [ ! -f "vendor/omni/config/common.mk" ]; then
@@ -380,7 +372,6 @@ PY
           echo ""
 
           exit 1
-
         fi
 
         echo "Omni vendor tree found."
@@ -390,13 +381,12 @@ PY
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Check device tree
-    # ---------------------------------------------------------
+    # =========================================================
+    # CHECK DEVICE TREE
+    # =========================================================
 
     - name: Check Device Tree
       run: |
-
         echo "Checking device tree..."
 
         test -f "${{ github.event.inputs.DEVICE_PATH }}/AndroidProducts.mk"
@@ -414,18 +404,21 @@ PY
         cat "${{ github.event.inputs.DEVICE_PATH }}/omni_T482L.mk"
 
         echo ""
+        echo "BoardConfig.mk:"
+        cat "${{ github.event.inputs.DEVICE_PATH }}/BoardConfig.mk"
+
+        echo ""
         echo "Device tree check passed."
 
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Check lunch target
-    # ---------------------------------------------------------
+    # =========================================================
+    # CHECK LUNCH TARGET
+    # =========================================================
 
     - name: Check Lunch Target
       run: |
-
         echo "Searching for omni_T482L..."
 
         grep -R \
@@ -440,9 +433,9 @@ PY
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Set swap
-    # ---------------------------------------------------------
+    # =========================================================
+    # SWAP
+    # =========================================================
 
     - name: Set Swap Space
       uses: pierotofy/set-swap-space@master
@@ -450,13 +443,12 @@ PY
         swap-size-gb: 12
 
 
-    # ---------------------------------------------------------
-    # Build recovery
-    # ---------------------------------------------------------
+    # =========================================================
+    # BUILD RECOVERY
+    # =========================================================
 
     - name: Building recovery
       run: |
-
         set -e
 
         echo "========================================"
@@ -466,7 +458,6 @@ PY
         source build/envsetup.sh
 
         export ALLOW_MISSING_DEPENDENCIES=true
-
         export USE_CCACHE=1
 
         ccache -M 10G || true
@@ -495,14 +486,13 @@ PY
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Show output
-    # ---------------------------------------------------------
+    # =========================================================
+    # SHOW BUILD OUTPUT
+    # =========================================================
 
     - name: Show Build Output
       if: always()
       run: |
-
         echo "========================================"
         echo "Output directory"
         echo "========================================"
@@ -514,25 +504,24 @@ PY
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
 
-    # ---------------------------------------------------------
-    # Setup tmate for debugging
-    # ---------------------------------------------------------
+    # =========================================================
+    # TMATE DEBUG SESSION
+    # =========================================================
 
     - name: Setup tmate session
       if: failure()
       uses: mxschmitt/action-tmate@v3
 
 
-    # ---------------------------------------------------------
-    # Upload recovery
-    # ---------------------------------------------------------
+    # =========================================================
+    # UPLOAD RECOVERY
+    # =========================================================
 
     - name: Upload Recovery
       if: success()
       uses: softprops/action-gh-release@v2
 
       with:
-
         files: |
           workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img
           workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip
@@ -560,4 +549,4 @@ PY
           ${{ github.run_id }}
 
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ github.token }}
